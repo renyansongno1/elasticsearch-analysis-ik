@@ -38,6 +38,7 @@ import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
+import java.sql.*;
 import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -154,6 +155,9 @@ public class Dictionary {
 					singleton.loadSuffixDict();
 					singleton.loadPrepDict();
 					singleton.loadStopWordDict();
+
+					// 启动一个线程 定时从mysql中获取需要热添加的词
+					new Thread(new HotDicReloadThread()).start();
 
 					if(cfg.isEnableRemoteDict()){
 						// 建立监控线程
@@ -391,6 +395,67 @@ public class Dictionary {
 		this.loadExtDict();
 		// 加载远程自定义词库
 		this.loadRemoteExtDict();
+
+		// 添加 从mysql 加载字典
+		this.loadMysqlDic();
+
+	}
+
+	/**
+	 * 从mysql中加载热词
+	 */
+	private void loadMysqlDic() {
+
+		Connection connection = null;
+		Statement statement = null ;
+		ResultSet resultSet = null;
+
+		Path file = PathUtils.get(getDictRoot(),"jdbc-reload.properties");
+
+		try {
+			props.load(new FileInputStream(file.toFile()));
+
+			connection = DriverManager.getConnection(
+					props.getProperty("jdbc.url"),
+					props.getProperty("jdbc.user"),
+					props.getProperty("jdbc.password")
+			);
+
+			statement= connection.createStatement();
+
+			resultSet = statement.executeQuery(props.getProperty("jdbc.reload.sql"));
+
+			while (resultSet.next()) {
+				String theWorld = resultSet.getString("word");
+				_MainDict.fillSegment(theWorld.trim().toCharArray());
+			}
+			Thread.sleep(Integer.valueOf(String.valueOf(props.getProperty("jdbc.reload.interval"))));
+		} catch (IOException | SQLException | InterruptedException e) {
+			e.printStackTrace();
+		}finally {
+			try {
+				if (resultSet != null) {
+					resultSet.close();
+				}
+			} catch (SQLException e) {
+				e.printStackTrace();
+			}
+			try {
+				if (statement != null) {
+					statement.close();
+				}
+			} catch (SQLException e) {
+				e.printStackTrace();
+			}
+			try {
+				if (connection != null) {
+					connection.close();
+				}
+			} catch (SQLException e) {
+				e.printStackTrace();
+			}
+		}
+
 	}
 
 	/**
@@ -527,6 +592,62 @@ public class Dictionary {
 					logger.info(theWord);
 					_StopWords.fillSegment(theWord.trim().toLowerCase().toCharArray());
 				}
+			}
+		}
+
+		this.loadMysqlStopWordDict();
+
+	}
+
+	private void loadMysqlStopWordDict() {
+
+		Connection connection = null;
+		Statement statement = null ;
+		ResultSet resultSet = null;
+
+		Path file = PathUtils.get(getDictRoot(),"jdbc-reload.properties");
+
+		try {
+			props.load(new FileInputStream(file.toFile()));
+
+			connection = DriverManager.getConnection(
+					props.getProperty("jdbc.url"),
+					props.getProperty("jdbc.user"),
+					props.getProperty("jdbc.password")
+			);
+
+			statement= connection.createStatement();
+
+			resultSet = statement.executeQuery(props.getProperty("jdbc.reload.stopword.sql"));
+
+			while (resultSet.next()) {
+				String theWorld = resultSet.getString("word");
+				_StopWords.fillSegment(theWorld.trim().toCharArray());
+			}
+			Thread.sleep(Integer.valueOf(String.valueOf(props.getProperty("jdbc.reload.interval"))));
+		} catch (IOException | SQLException | InterruptedException e) {
+			e.printStackTrace();
+		}finally {
+			try {
+				if (resultSet != null) {
+					resultSet.close();
+				}
+			} catch (SQLException e) {
+				e.printStackTrace();
+			}
+			try {
+				if (statement != null) {
+					statement.close();
+				}
+			} catch (SQLException e) {
+				e.printStackTrace();
+			}
+			try {
+				if (connection != null) {
+					connection.close();
+				}
+			} catch (SQLException e) {
+				e.printStackTrace();
 			}
 		}
 
